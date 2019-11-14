@@ -1,81 +1,34 @@
 package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.hardware.bosch.BNO055IMU;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
-import com.qualcomm.robotcore.hardware.CRServo;
-import com.qualcomm.robotcore.hardware.DcMotor;
-import com.qualcomm.robotcore.hardware.DcMotorSimple;
 
-import org.firstinspires.ftc.robotcore.external.navigation.Orientation;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.AxesOrder;
 import org.firstinspires.ftc.robotcore.external.navigation.AxesReference;
+import org.firstinspires.ftc.robotcore.external.navigation.Orientation;
 
-import com.qualcomm.robotcore.hardware.TouchSensor;
-
-
-@TeleOp(name = "Drivercentric", group = "Taus")
+@Disabled
+@TeleOp(name="Drivercentric", group="Taus")
 public class TeleOp_DriverCentric extends LinearOpMode {
 
     float rotate_angle = 0;
     double reset_angle = 0;
-
-    private DcMotor front_left_wheel = null;
-    private DcMotor back_left_wheel = null;
-    private DcMotor back_right_wheel = null;
-    private DcMotor front_right_wheel = null;
+    double leftExtensionPower;
+    double rightExtensionPower;
+    double rightLiftPower;
+    double leftLiftPower;
 
     BNO055IMU imu;
-
-    private double liftPower = 0;
-    private double extensionPower = 0;
-
-    private CRServo clawServo = null;
-    public CRServo leftLiftServo = null;
-    public CRServo rightLiftServo = null;
-    public CRServo leftExtensionServo = null;
-    public CRServo rightExtensionServo = null;
-
-    private TouchSensor leftLiftLimit = null;
-    private TouchSensor rightLiftLimit = null;
-    //private TouchSensor leftExtensionLimit = null;
-    //private TouchSensor rightExtensionLimit = null;
-
+    Hardware robot = new Hardware();
 
 
     @Override
     public void runOpMode() {
-        front_left_wheel = hardwareMap.dcMotor.get("left_front");
-        back_left_wheel = hardwareMap.dcMotor.get("left_back");
-        back_right_wheel = hardwareMap.dcMotor.get("right_back");
-        front_right_wheel = hardwareMap.dcMotor.get("right_front");
-        leftLiftServo = hardwareMap.crservo.get("left_lift");
-        rightLiftServo = hardwareMap.crservo.get("right_lift");
-        leftExtensionServo = hardwareMap.crservo.get("left_extension");
-        rightExtensionServo = hardwareMap.crservo.get("right_extension");
-        clawServo = hardwareMap.crservo.get("claw_servo");
-        leftLiftLimit = hardwareMap.get(TouchSensor.class, "left_lift_limit0");
-        rightLiftLimit = hardwareMap.get(TouchSensor.class, "right_lift_limit0");
-        //leftExtensionLimit = hardwareMap.get(TouchSensor.class, "leftExtensionLimit");
-        //rightExtensionLimit = hardwareMap.get(TouchSensor.class, "rightExtensionLimit");
 
-        front_left_wheel.setDirection(DcMotor.Direction.REVERSE);
-        back_left_wheel.setDirection(DcMotor.Direction.REVERSE);
-        front_right_wheel.setDirection(DcMotor.Direction.FORWARD);
-        back_right_wheel.setDirection(DcMotor.Direction.FORWARD);
-
-        front_left_wheel.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        back_left_wheel.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        front_right_wheel.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        back_right_wheel.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-
-        leftExtensionServo.setDirection(DcMotorSimple.Direction.REVERSE);
-        rightExtensionServo.setDirection(DcMotorSimple.Direction.FORWARD);
-        leftLiftServo.setDirection(DcMotorSimple.Direction.REVERSE);
-        rightLiftServo.setDirection(DcMotorSimple.Direction.REVERSE);
-
-
+        //initializing imu
         imu = hardwareMap.get(BNO055IMU.class, "imu");
 
         BNO055IMU.Parameters parameters = new BNO055IMU.Parameters();
@@ -86,24 +39,78 @@ public class TeleOp_DriverCentric extends LinearOpMode {
         parameters.loggingEnabled = false;
         imu.initialize(parameters);
 
-        while (!opModeIsActive()) {
+        robot.initTeleOpNOIMU(hardwareMap);
+
+
+        telemetry.addLine("wait for gyro calibration"); //telling user to wait for gyro to be calibrated
+        telemetry.update();
+
+        //waiting for gyro to calibrate
+        while (!imu.isGyroCalibrated()) {
+            //waiting
         }
 
-        while (opModeIsActive()) {
+        telemetry.addData("gyro status :: ", imu.getCalibrationStatus().toString()); //returning gyro status (ready to start)
+        telemetry.update();
+
+        while(!opModeIsActive()){}
+
+        while(opModeIsActive()){
+            resetAngle();
             drive();
 
-            resetAngle();
+            // This commands are for claw functionality
+            if(gamepad2.x ) {
+                telemetry.addData("grabbing block", gamepad2.x);
+                telemetry.update();
+                grabBlock("grab");
+            }
+            if(gamepad2.b) {
+                telemetry.addData("releasing block", gamepad2.b);
+                telemetry.update();
+                grabBlock("release");
+            }
 
-            //Pressing gamepad2.x is for closing claw and gamepad2.A is for opening claw
-            claw();
 
-            //gamepad2 left trigger is for extending or retracting
-            extend();
+            //lift
+            if(Math.abs(gamepad2.left_stick_x) > 0.05){
+                telemetry.addData("extension", gamepad2.left_stick_x);
+                //this will make sure we are using 70% power only
+                if(Math.abs(gamepad2.left_stick_x) > 0.7){
+                    //setting power based on movement of joystick right- extending, left - retracting
+                    leftExtensionPower = gamepad2.left_stick_x > 0 ? 0.7 : -0.7 ;
+                    rightExtensionPower = gamepad2.left_stick_x > 0 ? -0.7 : 0.7;
+                } else {
+                    leftExtensionPower = gamepad2.left_stick_x ;
+                    rightExtensionPower = gamepad2.left_stick_x;
+                }
+                robot.leftExtensionServo.setPower(leftExtensionPower);
+                robot.rightExtensionServo.setPower(rightExtensionPower);
 
-            //gamepad2 trigger is for lift going up and down.
-            lift();
+            }
 
-            telemetry.update();
+
+            if (Math.abs(gamepad2.right_stick_y) > 0.05 && !(robot.rightLimitSwitch.isPressed() || robot.leftLimitSwitch.isPressed())) {
+                telemetry.addData("Stick_Y", gamepad2.right_stick_y);
+                //this will make sure we are using 70% power only
+                if(Math.abs(gamepad2.right_stick_y) > 0.7){
+                    //setting power based on movement of joystick up - moving lift up, down - moving lift down
+                    leftLiftPower = gamepad2.left_stick_y > 0 ? 0.7 : -0.7 ; ;
+                    rightLiftPower = gamepad2.left_stick_y > 0 ? -0.7 : 0.7 ;;
+                }else {
+                    leftLiftPower = gamepad2.left_stick_y;
+                    rightLiftPower = gamepad2.left_stick_y;
+                }
+                robot.leftLiftServo.setPower(leftLiftPower);
+                robot.rightLiftServo.setPower(rightLiftPower);
+            } else if (!robot.rightLimitSwitch.isPressed() || !robot.leftLimitSwitch.isPressed()) {
+                robot.leftLiftServo.setPower(.1);
+                robot.rightLiftServo.setPower(.1);
+            } else {
+                robot.leftLiftServo.setPower(0);
+                robot.rightLiftServo.setPower(0);
+            }
+
 
         }
     }
@@ -111,9 +118,10 @@ public class TeleOp_DriverCentric extends LinearOpMode {
 
 
     public void drive() {
-        double Protate =  gamepad1.right_stick_x/ 4;
-        double stick_x =  gamepad1.left_stick_x * Math.sqrt(Math.pow(1 - Math.abs(Protate), 2) / 2); //Accounts for Protate when limiting magnitude to be less than 1
-        double stick_y =  gamepad1.left_stick_y * Math.sqrt(Math.pow(1 - Math.abs(Protate), 2) / 2);
+
+        double Protate = Math.abs(gamepad1.right_stick_x) > .05 ? 0 : gamepad1.right_stick_x / 4;
+        double stick_x = Math.abs(gamepad1.left_stick_x) > .05 ? 0 : gamepad1.left_stick_x * Math.sqrt(Math.pow(1 - Math.abs(Protate), 2) / 2); //Accounts for Protate when limiting magnitude to be less than 1
+        double stick_y = Math.abs(gamepad1.left_stick_y) > .05 ? 0 : gamepad1.left_stick_y * Math.sqrt(Math.pow(1 - Math.abs(Protate), 2) / 2);
         double theta = 0;
         double Px = 0;
         double Py = 0;
@@ -128,109 +136,69 @@ public class TeleOp_DriverCentric extends LinearOpMode {
         }
         gyroAngle = -1 * gyroAngle;
 
-        if (gamepad1.right_bumper) {
+        if(gamepad1.right_bumper){
             //Disables gyro, sets to -Math.PI/2 so front is defined correctly.
-            gyroAngle = -Math.PI / 2;
-        }
-
-        //Linear directions in case you want to do straight lines.
-        if (gamepad1.dpad_right) {
-            stick_x = 0.5;
-        } else if (gamepad1.dpad_left) {
-            stick_x = -0.5;
-        }
-        if (gamepad1.dpad_up) {
-            stick_y = -0.5;
-        } else if (gamepad1.dpad_down) {
-            stick_y = 0.5;
+            gyroAngle = -Math.PI/2;
         }
 
 
         //MOVEMENT for rotation
         theta = Math.atan2(stick_y, stick_x) - gyroAngle - (Math.PI / 2);
+
+        //if (Math.abs(stick_x)<.05){
+        //    stick_x = 0;
+        //}
+        //if (Math.abs(stick_y)<.05){
+        //    stick_y = 0;
+        //}
+
         Px = Math.sqrt(Math.pow(stick_x, 2) + Math.pow(stick_y, 2)) * (Math.sin(theta + Math.PI / 4));
         Py = Math.sqrt(Math.pow(stick_x, 2) + Math.pow(stick_y, 2)) * (Math.sin(theta - Math.PI / 4));
 
-        telemetry.addData("Stick_X", stick_x);
-        telemetry.addData("Stick_Y", stick_y);
-        telemetry.addData("Magnitude", Math.sqrt(Math.pow(stick_x, 2) + Math.pow(stick_y, 2)));
-        telemetry.addData("Front Left", Py - Protate);
-        telemetry.addData("Back Left", Px - Protate);
-        telemetry.addData("Back Right", Py + Protate);
-        telemetry.addData("Front Right", Px + Protate);
-
-        front_left_wheel.setPower(Py - Protate);
-        back_left_wheel.setPower(Px - Protate);
-        back_right_wheel.setPower(Py + Protate);
-        front_right_wheel.setPower(Px + Protate);
+        robot.frontLeftMotor.setPower(Py - Protate);
+        robot.backLeftMotor.setPower(Px - Protate);
+        robot.backRightMotor.setPower(Py + Protate);
+        robot.frontRightMotor.setPower(Px + Protate);
     }
 
-
-    public void resetAngle() {
-        if (gamepad1.a) {
+    public void resetAngle(){
+        if(gamepad1.a){
             reset_angle = getHeading() + reset_angle;
         }
     }
 
-    public double getHeading() {
+    public double getHeading(){
         Orientation angles = imu.getAngularOrientation(AxesReference.INTRINSIC, AxesOrder.ZYX, AngleUnit.DEGREES);
         double heading = angles.firstAngle;
-        if (heading < -180) {
+        if(heading < -180) {
             heading = heading + 360;
-        } else if (heading > 180) {
+        }
+        else if(heading > 180){
             heading = heading - 360;
         }
         heading = heading - reset_angle;
         return heading;
     }
 
+    public void grabBlock (String type) {
 
-    public void claw() {
+        if (type.equalsIgnoreCase("grab")) {
 
-        if(gamepad2.x ){
-            clawServo.setPower(0.5);
-            telemetry.addData("grabbing block", gamepad2.x);
-        } else if(gamepad2.a){
-            telemetry.addData("releasing block", gamepad2.x);
-            clawServo.setPower((-0.5));
-            sleep(1000);
-            clawServo.setPower(-0.1);
-        }else {
-            clawServo.setPower(0.0);
+            robot.clawServo.setPower(0.3);
+            sleep(500);
+            robot.clawServo.setPower(0.1);
+
+
+        } else if (type.equalsIgnoreCase("release")) {
+
+            robot.clawServo.setPower(-0.3);
+            sleep(500);
+            robot.clawServo.setPower(0);
+
+
         }
+
 
     }
 
-    public void extend(){
-
-        if (Math.abs(gamepad2.right_trigger) > 0.05) {
-            telemetry.addData("extension", gamepad2.right_trigger);
-            extensionPower = .4;
-        }
-        else if(gamepad2.right_bumper){
-            extensionPower = -.4;
-        }
-        else{
-            extensionPower = 0.0;
-        }
-        leftExtensionServo.setPower(extensionPower);
-        rightExtensionServo.setPower(extensionPower);
-
-    }
-
-    public void lift(){
-        if (Math.abs(gamepad2.left_trigger) > 0.07 ) {
-            telemetry.addData("lift", gamepad2.left_trigger);
-            liftPower = 0.5;
-        }else if(gamepad2.left_bumper){
-            liftPower = -0.1;
-
-        } else {
-            liftPower = 0.1;
-        }
-
-        leftLiftServo.setPower(liftPower);
-        rightLiftServo.setPower(liftPower);
-
-    }
 }
