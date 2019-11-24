@@ -33,6 +33,7 @@ import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.ClassFactory;
 import org.firstinspires.ftc.robotcore.external.matrices.OpenGLMatrix;
@@ -84,7 +85,8 @@ import static org.firstinspires.ftc.robotcore.external.navigation.VuforiaLocaliz
 
 
 @Autonomous(name="SKYSTONE Vuforia Nav", group ="Concept")
-public class ConceptVuforiaSkyStoneNavigation extends LinearOpMode {
+
+public class ConceptVuforiaSkyStoneNavigation extends Auto_Methods {
 
     // IMPORTANT:  For Phone Camera, set 1) the camera source and 2) the orientation, based on how your phone is mounted:
     // 1) Camera Source.  Valid choices are:  BACK (behind screen) or FRONT (selfie side)
@@ -93,7 +95,7 @@ public class ConceptVuforiaSkyStoneNavigation extends LinearOpMode {
     // NOTE: If you are running on a CONTROL HUB, with only one USB WebCam, you must select CAMERA_CHOICE = BACK; and PHONE_IS_PORTRAIT = false;
     //
     private static final VuforiaLocalizer.CameraDirection CAMERA_CHOICE = BACK;
-    private static final boolean PHONE_IS_PORTRAIT = false  ;
+    private static final boolean PHONE_IS_PORTRAIT = true  ;
 
     /*
      * IMPORTANT: You need to obtain your own license key to use Vuforia. The string below with which
@@ -136,8 +138,11 @@ public class ConceptVuforiaSkyStoneNavigation extends LinearOpMode {
     private float phoneXRotate    = 0;
     private float phoneYRotate    = 0;
     private float phoneZRotate    = 0;
+    ElapsedTime period = new ElapsedTime();
+
 
     @Override public void runOpMode() {
+        initRobot();
         /*
          * Configure Vuforia by creating a Parameter object, and passing it to the Vuforia engine.
          * We can pass Vuforia the handle to a camera preview resource (on the RC phone);
@@ -297,9 +302,13 @@ public class ConceptVuforiaSkyStoneNavigation extends LinearOpMode {
         final float CAMERA_LEFT_DISPLACEMENT     = 0;     // eg: Camera is ON the robot's center line
 
         OpenGLMatrix robotFromCamera = OpenGLMatrix
-                    .translation(CAMERA_FORWARD_DISPLACEMENT, CAMERA_LEFT_DISPLACEMENT, CAMERA_VERTICAL_DISPLACEMENT)
-                    .multiplied(Orientation.getRotationMatrix(EXTRINSIC, YZX, DEGREES, phoneYRotate, phoneZRotate, phoneXRotate));
+                .translation(CAMERA_FORWARD_DISPLACEMENT, CAMERA_LEFT_DISPLACEMENT, CAMERA_VERTICAL_DISPLACEMENT)
+                .multiplied(Orientation.getRotationMatrix(EXTRINSIC, YZX, DEGREES, phoneYRotate, phoneZRotate, phoneXRotate));
 
+
+        waitForStart();
+
+        long startTime = period.startTimeNanoseconds();
         /**  Let all the trackable listeners know where the phone is.  */
         for (VuforiaTrackable trackable : allTrackables) {
             ((VuforiaTrackableDefaultListener) trackable.getListener()).setPhoneInformation(robotFromCamera, parameters.cameraDirection);
@@ -318,6 +327,7 @@ public class ConceptVuforiaSkyStoneNavigation extends LinearOpMode {
         // Tap the preview window to receive a fresh image.
 
         targetsSkyStone.activate();
+
         while (!isStopRequested()) {
 
             // check all the trackable targets to see which one (if any) is visible.
@@ -336,36 +346,52 @@ public class ConceptVuforiaSkyStoneNavigation extends LinearOpMode {
                     break;
                 }
             }
+            sleep(5000);
 
             // Provide feedback as to where the robot is located (if we know).
             if (targetVisible) {
+
                 // express position (translation) of robot in inches.
                 VectorF translation = lastLocation.getTranslation();
-                telemetry.addData("Pos (in)", "{X, Y, Z} = %.1f, %.1f, %.1f",
-                        translation.get(0) / mmPerInch, translation.get(1) / mmPerInch, translation.get(2) / mmPerInch);
+//                telemetry.addData("Pos (in)", "{X, Y, Z} = %.1f, %.1f, %.1f",
+//                        translation.get(0) / mmPerInch, translation.get(1) / mmPerInch, translation.get(2) / mmPerInch);
 
                 // express the rotation of the robot in degrees.
                 Orientation rotation = Orientation.getOrientation(lastLocation, EXTRINSIC, XYZ, DEGREES);
-                telemetry.addData("Rot (deg)", "{Roll, Pitch, Heading} = %.0f, %.0f, %.0f", rotation.firstAngle, rotation.secondAngle, rotation.thirdAngle);
+//                telemetry.addData("Rot (deg)", "{Roll, Pitch, Heading} = %.0f, %.0f, %.0f", rotation.firstAngle, rotation.secondAngle, rotation.thirdAngle);
                 double yPos = translation.get(1) / mmPerInch;
                 String skyPos = "";
-                if(yPos < 0 ){
-                    skyPos = "Left";
-                    telemetry.addData("Skystone Position is:", skyPos);
-                }else if(yPos > 0 ){
+                if(yPos < 0){
                     skyPos = "Center";
                     telemetry.addData("Skystone Position is:", skyPos);
-                }else
+                    forward(0.5, 12);
+                    break;
+
+                    //telemetry.addData("Time",period.seconds());
+                }else if(yPos > 0){
+                    skyPos = "Left";
+                    telemetry.addData("Skystone Position is:", skyPos);
+                    //telemetryaddData("Time",period.seconds());
+                    strafeLeft(0.5, 8);
+                    break;
+                }else if(period.seconds() >5){
                     skyPos = "Right";
                     telemetry.addData("Skystone Position is:", skyPos);
+                    //telemetry.addData("Time",period.seconds());
+                    strafeRight(0.5, 8);
+                    break;
+                }
             }
             else {
                 telemetry.addData("Visible Target", "none");
             }
             telemetry.update();
+
         }
 
         // Disable Tracking when we are done;
         targetsSkyStone.deactivate();
+
     }
 }
+
